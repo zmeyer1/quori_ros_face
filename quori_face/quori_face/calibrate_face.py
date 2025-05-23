@@ -1,56 +1,50 @@
-def main():
-    print('Hi from quori_face.')
+# !/usr/bin/env python3
+
+# display_face.py
+
+# Zane Meyer
+
+import rclpy
+from rclpy.node import Node
+from quori_face_msgs.msg import Eye, Face, Mouth
+
+import cv2
+import numpy as np
+
+class FaceCalibrator(Node):
+    def __init__(self):
+        super().__init__("face_calibrator")
+
+        self.pub = self.create_publisher(Face, 'quori_face/face_cmd', 10)
+        self.count = 0
+        self.timer = self.create_timer(0.5, self.move_eyes) # update image at 2 Hz
+
+    def move_eyes(self):
+      face = Face()
+      # for position in [0.33, 0.67]:
+      #   self.count += 1
+      #   msg = Eye()
+      #   if (self.count // 10) % 2:
+      #     msg.pupil = [position+0.02, 0.33]
+      #   else:
+      #     msg.pupil = [position-0.02, 0.33]
+      #   face.eyes.append(msg)
+      msg = Eye()
+      msg.eyelid_angle = -10
+      face.eyes.append(msg)
+      msg = Eye()
+      msg.eyelid_angle = 0
+      face.eyes.append(msg)
 
 
-if __name__ == '__main__':
-    main()
+      self.pub.publish(face)
 
-"""
-#include <rclcpp/rclcpp.hpp>
-#include <sensor_msgs/msg/image.hpp>
-#include <cv_bridge/cv_bridge.h>
-#include <opencv2/opencv.hpp>
+def main(args=None):
+  rclpy.init(args=args)
+  node = FaceCalibrator()
+  rclpy.spin(node)
+  rclpy.shutdown()
 
-class ImageDisplayNode : public rclcpp::Node {
-public:
-  ImageDisplayNode() : Node("image_display_node") {
-    // 1. Create Subscriber
-    image_subscription_ = this->create_subscription<sensor_msgs::msg::Image>(
-        "/image_topic", 10,
-        std::bind(&ImageDisplayNode::imageCallback, this, std::placeholders::_1));
-    
-    // 3. Create OpenCV Window
-    cv::namedWindow("Image Display", cv::WINDOW_NORMAL); 
-    
-    // 4. Set to Fullscreen
-    cv::setWindowProperty("Image Display", cv::WND_PROP_FULLSCREEN, cv::WINDOW_FULLSCREEN); 
-  }
 
-private:
-  void imageCallback(const sensor_msgs::msg::Image::SharedPtr msg) {
-    try {
-        // 2. Convert ROS Image to cv::Mat
-        cv_bridge::CvImagePtr cv_ptr = cv_bridge::toCvCopy(msg, sensor_msgs::image_encodings::BGR8);
-
-        // 5. Display the Image
-        cv::imshow("Image Display", cv_ptr->image);
-        
-        // 6. Handle User Input (Optional)
-        cv::waitKey(1); 
-
-    } catch (cv_bridge::Exception &e) {
-      RCLCPP_ERROR(this->get_logger(), "Could not convert to 'bgr8': %s", e.what());
-    }
-  }
-
-  rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr image_subscription_;
-};
-
-int main(int argc, char *argv[]) {
-  rclcpp::init(argc, argv);
-  rclcpp::spin(std::make_shared<ImageDisplayNode>());
-  rclcpp::shutdown();
-  return 0;
-}
-
-"""
+if __name__ == "__main__":
+  main()

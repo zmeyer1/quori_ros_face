@@ -30,7 +30,7 @@ setup(
     entry_points={
         'console_scripts': [
             'draw_face = quori_face.draw_face:draw_face',
-            'generate_face = quori_face.draw_face:generate_face',
+            'calibrate_face = quori_face.calibrate_face:main',
         ],
     },
 )
