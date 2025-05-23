@@ -23,6 +23,7 @@ class FaceWriter(Node):
         self.create_subscription(Face, 'quori_face/face_cmd', self.update_face, 10)
         self.create_service(FaceQuery, 'quori_face/query_face', self.get_face)
 
+        self.declare_parameter("blink_period", 4.0)
     
         self.face_pose = {
             "left_eye": {
@@ -57,7 +58,7 @@ class FaceWriter(Node):
         self.blink_state = 0.0 # 1 is fully closed, 0 is fully open
         self.blink_direction = 1
         self.last_blink = time.time()
-        self.blink_pause = 3
+        self.blink_pause = 0
 
     def get_face(self, request, response):
         for idx in ["left_eye", "right_eye"]:
@@ -133,7 +134,7 @@ class FaceWriter(Node):
             elif blink_state <= 0.0:
                 blink_state = 0.0
                 self.blink_direction *= -1
-                self.blink_pause = 5
+                self.blink_pause = self.get_parameter('blink_period').get_parameter_value().double_value
             self.blink_state = blink_state
         
 

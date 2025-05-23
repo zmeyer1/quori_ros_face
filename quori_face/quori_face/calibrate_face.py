@@ -1,6 +1,6 @@
 # !/usr/bin/env python3
 
-# display_face.py
+# calibrate_face.py
 
 # Zane Meyer
 
