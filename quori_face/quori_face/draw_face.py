@@ -12,7 +12,6 @@ from quori_face_msgs.srv import FaceQuery
 
 import cv2, time
 import numpy as np
-from enum import Enum
 
 class FaceWriter(Node):
     def __init__(self, screen_size):

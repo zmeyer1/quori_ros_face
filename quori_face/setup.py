@@ -31,6 +31,7 @@ setup(
         'console_scripts': [
             'draw_face = quori_face.draw_face:draw_face',
             'calibrate_face = quori_face.calibrate_face:main',
+            'focal_point = quori_face.focal_point:main',
         ],
     },
 )
