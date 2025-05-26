@@ -7,7 +7,7 @@ git clone https://github.com/zmeyer1/quori_ros_face.git
 colcon build && source install/setup.bash
 
 ## To run the face
- ros2 run quori_face draw_face --ros-args -p blink_period:=2.0
+ ros2 run quori_face draw_face --ros-args -p max_blink_period:=8.0
 
 ## To move the eyes
 Just manually move them for now. Theres a default JSON file you can edit, or you can publish a Face message to quori_face/face_cmd

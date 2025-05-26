@@ -17,33 +17,32 @@ class FaceWriter(Node):
     def __init__(self, screen_size):
         super().__init__("face_writer")
 
-        self.timer = self.create_timer(0.03, self.set_image) # update image at 30 Hz
         self.timer = self.create_timer(0.05, self.blink_manager) # update image at 20 Hz
         self.create_subscription(Face, 'quori_face/face_cmd', self.update_face, 10)
         self.create_service(FaceQuery, 'quori_face/query_face', self.get_face)
 
-        self.declare_parameter("blink_period", 4.0)
+        self.declare_parameter("max_blink_period", 10.0)
     
         self.face_pose = {
             "left_eye": {
                 "center": [0.33, 0.33],
                 "pupil": [0.35, 0.35],
-                "radius": 140,
-                "thickness": 15,
-                "pupil_size": 60,
+                "radius": 70,
+                "thickness": 8,
+                "pupil_size": 30,
                 "eyelid": [0.33, 0.03],
                 "eyelid_angle": 0,
-                "eyelid_size": [350, 175],
+                "eyelid_size": [125, 100],
             },
             "right_eye": {
                 "center": [0.67, 0.33],
                 "pupil": [0.65, 0.35],
-                "radius": 140,
-                "thickness": 15,
-                "pupil_size": 60,
+                "radius": 70,
+                "thickness": 8,
+                "pupil_size": 30,
                 "eyelid": [0.67, 0.03],
                 "eyelid_angle": 0,
-                "eyelid_size": [350,175],
+                "eyelid_size": [125,100],
             },
             "mouth": {
                 "left_corner": [0.40, 0.78],
@@ -91,8 +90,17 @@ class FaceWriter(Node):
 
     def draw_eye(self, im, eye_dict, color = (255,60,0)):
         """Color is in BGR, not RGB."""
-        cv2.circle(im, self._ratio2pt(eye_dict["center"]), eye_dict["radius"], color, eye_dict["thickness"])
-        cv2.circle(im, self._ratio2pt(eye_dict["pupil"]), eye_dict["pupil_size"], color, -1)
+        eye_center = self._ratio2pt(eye_dict["center"])
+        pupil_center = self._ratio2pt(eye_dict["pupil"])
+        eye_vector = pupil_center - eye_center
+
+        if np.linalg.norm(eye_vector) > (eye_dict["radius"] - eye_dict["pupil_size"]- eye_dict["thickness"]):
+            # handle pupils out of spec
+            radius = eye_dict["radius"] - eye_dict["pupil_size"] - eye_dict["thickness"]
+            pupil_angle = np.arctan2(eye_vector[1],eye_vector[0])
+            pupil_center = eye_center + np.int32([radius*np.cos(pupil_angle), radius*np.sin(pupil_angle)])
+        cv2.circle(im, eye_center, eye_dict["radius"], color, eye_dict["thickness"])
+        cv2.circle(im, pupil_center, eye_dict["pupil_size"], color, -1)
         lid_pos = np.array(eye_dict["eyelid"]) + self.blink_state*(np.array(eye_dict["center"]) - np.array(eye_dict["eyelid"]))
         cv2.ellipse(im, self._ratio2pt(lid_pos), eye_dict["eyelid_size"], eye_dict["eyelid_angle"], 0, 360, (0,0,0), -1)
         
@@ -123,21 +131,19 @@ class FaceWriter(Node):
     def blink_manager(self):
         if time.time() - self.last_blink > self.blink_pause:
             blink_step = 0.1  # increment the blink by 10% each time
-            self.blink_pause = 0.01
+            self.blink_pause = 0.0 # keep going at refresh rate
             self.last_blink = time.time()
             blink_state = self.blink_state + blink_step * self.blink_direction
             if blink_state >= 1.0:
                 blink_state = 1.0
                 self.blink_direction *= -1
-                self.blink_pause = 0.2 # pause a little longer closed
+                self.blink_pause = 0.2 # pause a little when closed
             elif blink_state <= 0.0:
                 blink_state = 0.0
                 self.blink_direction *= -1
-                self.blink_pause = self.get_parameter('blink_period').get_parameter_value().double_value
+                self.blink_pause = min(np.random.random(),0.5)*self.get_parameter('max_blink_period').get_parameter_value().double_value
             self.blink_state = blink_state
         
-
-
 def draw_face(args=None):
     rclpy.init(args=args)
 
@@ -146,7 +152,7 @@ def draw_face(args=None):
     cv2.setWindowProperty('Face_Display', cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
     cv2.waitKey(150) # sleep while letting cv2 set up
     _, _, x, y = cv2.getWindowImageRect("Face_Display")
-    size = (y,x,3)
+    size = (y//2,x//2,3) # manually limit image size for performance reasons
     fullscreen = True
 
     exec = SingleThreadedExecutor()
@@ -158,6 +164,7 @@ def draw_face(args=None):
             cv2.setWindowProperty('Face_Display', cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
         else:
             cv2.setWindowProperty('Face_Display', cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_NORMAL)
+        writer.set_image()
         cv2.imshow("Face_Display", writer.image)
         key = cv2.waitKey(1)
         if (key & 0xFF) == ord('q') or (key & 0xFF) == ord('f'):

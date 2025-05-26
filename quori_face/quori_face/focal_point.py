@@ -24,7 +24,7 @@ class FocalPoint(Node):
 
 
     def create_focal_pt(self):
-        # Create an interactive marker
+        # create draggable marker that represents where the face should look
         int_marker = InteractiveMarker()
         int_marker.header.frame_id = "map"
         int_marker.name = "focal_point"

@@ -20,24 +20,17 @@ class FaceCalibrator(Node):
         self.timer = self.create_timer(0.5, self.move_eyes) # update image at 2 Hz
 
     def move_eyes(self):
-      face = Face()
-      # for position in [0.33, 0.67]:
-      #   self.count += 1
-      #   msg = Eye()
-      #   if (self.count // 10) % 2:
-      #     msg.pupil = [position+0.02, 0.33]
-      #   else:
-      #     msg.pupil = [position-0.02, 0.33]
-      #   face.eyes.append(msg)
-      msg = Eye()
-      msg.eyelid_angle = -10
-      face.eyes.append(msg)
-      msg = Eye()
-      msg.eyelid_angle = 0
-      face.eyes.append(msg)
+        face = Face()
+        self.count += 1
+        for position in [0.33, 0.67]:
+            msg = Eye()
+            if (self.count // 10) % 2:
+              msg.pupil = [position+0.02, 0.33]
+            else:
+              msg.pupil = [position-0.02, 0.33]
+            face.eyes.append(msg)
 
-
-      self.pub.publish(face)
+        self.pub.publish(face)
 
 def main(args=None):
   rclpy.init(args=args)
