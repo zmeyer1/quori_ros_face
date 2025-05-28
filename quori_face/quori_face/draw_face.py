@@ -1,6 +1,6 @@
 # !/usr/bin/env python3
 
-# display_face.py
+# draw_face.py
 
 # Zane Meyer
 
@@ -9,6 +9,7 @@ from rclpy.node import Node
 from rclpy.executors import SingleThreadedExecutor
 from quori_face_msgs.msg import Eye, Face, Mouth
 from quori_face_msgs.srv import FaceQuery
+from tf2_ros import TransformBroadcaster
 
 import cv2, time
 import numpy as np
@@ -18,37 +19,40 @@ class FaceWriter(Node):
         super().__init__("face_writer")
 
         self.timer = self.create_timer(0.05, self.blink_manager) # update image at 20 Hz
-        self.create_subscription(Face, 'quori_face/face_cmd', self.update_face, 10)
-        self.create_service(FaceQuery, 'quori_face/query_face', self.get_face)
+        self.create_subscription(Face, "quori_face/face_cmd", self.update_face, 10)
+        self.create_service(FaceQuery, "quori_face/query_face", self.get_face)
+
+        self.create_publisher("/tf", TFMessage)
 
         self.declare_parameter("max_blink_period", 10.0)
+        self.declare_parameter("PPI", 100.0) # Roughly an average pixels per inch default for Quori's screen
     
         self.face_pose = {
             "left_eye": {
-                "center": [0.33, 0.33],
-                "pupil": [0.35, 0.35],
+                "center": [0.23, 0.4],
+                "pupil": [0.05, 0.05], # relative to center
                 "radius": 70,
                 "thickness": 8,
-                "pupil_size": 30,
-                "eyelid": [0.33, 0.03],
-                "eyelid_angle": 0,
-                "eyelid_size": [125, 100],
+                "pupil_size": 25,
+                "eyelid": [0.23, 0.3],
+                "eyelid_angle": -10,
+                "eyelid_size": [160,75],
             },
             "right_eye": {
-                "center": [0.67, 0.33],
-                "pupil": [0.65, 0.35],
+                "center": [0.77, 0.4],
+                "pupil": [-0.05, 0.05], # relative to center
                 "radius": 70,
                 "thickness": 8,
-                "pupil_size": 30,
-                "eyelid": [0.67, 0.03],
-                "eyelid_angle": 0,
-                "eyelid_size": [125,100],
+                "pupil_size": 25,
+                "eyelid": [0.77, 0.3],
+                "eyelid_angle": 10,
+                "eyelid_size": [160,75],
             },
             "mouth": {
-                "left_corner": [0.40, 0.78],
-                "right_corner": [0.60, 0.78],
-                "upper_lip": [0.50, 0.82],
-                "lower_lip": [0.50, 0.85]
+                "left_corner": [0.25, 0.62],
+                "right_corner": [0.75, 0.62],
+                "upper_lip": [0.50, 0.57],
+                "lower_lip": [0.50, 0.60]
             },
         }
         self.screen_size = screen_size
@@ -88,31 +92,30 @@ class FaceWriter(Node):
         return (point[0]/self.screen_size[1], point[1]/self.screen_size[0])
 
 
-    def draw_eye(self, im, eye_dict, color = (255,60,0)):
+    def draw_eye(self, im, eye_dict, color = (0,0,255)):
         """Color is in BGR, not RGB."""
         eye_center = self._ratio2pt(eye_dict["center"])
-        pupil_center = self._ratio2pt(eye_dict["pupil"])
-        eye_vector = pupil_center - eye_center
+        eye_vector = self._ratio2pt(eye_dict["pupil"])
 
         if np.linalg.norm(eye_vector) > (eye_dict["radius"] - eye_dict["pupil_size"]- eye_dict["thickness"]):
             # handle pupils out of spec
             radius = eye_dict["radius"] - eye_dict["pupil_size"] - eye_dict["thickness"]
             pupil_angle = np.arctan2(eye_vector[1],eye_vector[0])
-            pupil_center = eye_center + np.int32([radius*np.cos(pupil_angle), radius*np.sin(pupil_angle)])
+            pupil_center = np.int32([radius*np.cos(pupil_angle), radius*np.sin(pupil_angle)])
         cv2.circle(im, eye_center, eye_dict["radius"], color, eye_dict["thickness"])
-        cv2.circle(im, pupil_center, eye_dict["pupil_size"], color, -1)
+        cv2.circle(im, eye_center+pupil_center, eye_dict["pupil_size"], color, -1)
         lid_pos = np.array(eye_dict["eyelid"]) + self.blink_state*(np.array(eye_dict["center"]) - np.array(eye_dict["eyelid"]))
         cv2.ellipse(im, self._ratio2pt(lid_pos), eye_dict["eyelid_size"], eye_dict["eyelid_angle"], 0, 360, (0,0,0), -1)
         
 
-    def draw_mouth(self, im, mouth_dict, color = (255,60,0)):
+    def draw_mouth(self, im, mouth_dict, color = (0,0,255)):
         """Color is in BGR, not RGB."""
         upper_x, upper_y = zip(*[self._ratio2pt(mouth_dict[key]) for key in ["left_corner", "upper_lip", "right_corner"]])
         lower_x, lower_y = zip(*[self._ratio2pt(mouth_dict[key]) for key in ["left_corner", "lower_lip", "right_corner"]])
         
         upper_coefs = np.polyfit(upper_x, upper_y, 2)
         lower_coefs = np.polyfit(lower_x, lower_y, 2)
-        i, j = np.meshgrid(*map(np.arange, im.shape[0:2]), indexing='ij')
+        i, j = np.meshgrid(*map(np.arange, im.shape[0:2]), indexing="ij")
 
         upper_mask = upper_coefs[2] + upper_coefs[1]*j + upper_coefs[0]*j**2 < i
         lower_mask = lower_coefs[2] + lower_coefs[1]*j + lower_coefs[0]*j**2 > i
@@ -125,7 +128,6 @@ class FaceWriter(Node):
         self.draw_eye(im, self.face_pose["left_eye"])
         self.draw_eye(im, self.face_pose["right_eye"])
         self.draw_mouth(im, self.face_pose["mouth"])
-
         self.image = im
 
     def blink_manager(self):
@@ -141,15 +143,15 @@ class FaceWriter(Node):
             elif blink_state <= 0.0:
                 blink_state = 0.0
                 self.blink_direction *= -1
-                self.blink_pause = min(np.random.random(),0.5)*self.get_parameter('max_blink_period').get_parameter_value().double_value
+                self.blink_pause = min(np.random.random(),0.5)*self.get_parameter("max_blink_period").get_parameter_value().double_value
             self.blink_state = blink_state
         
 def draw_face(args=None):
     rclpy.init(args=args)
 
     cv2.namedWindow("Face_Display", cv2.WND_PROP_FULLSCREEN)
-    cv2.setWindowProperty('Face_Display', cv2.WND_PROP_ASPECT_RATIO, cv2.WINDOW_FREERATIO)
-    cv2.setWindowProperty('Face_Display', cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+    cv2.setWindowProperty("Face_Display", cv2.WND_PROP_ASPECT_RATIO, cv2.WINDOW_FREERATIO)
+    cv2.setWindowProperty("Face_Display", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
     cv2.waitKey(150) # sleep while letting cv2 set up
     _, _, x, y = cv2.getWindowImageRect("Face_Display")
     size = (y//2,x//2,3) # manually limit image size for performance reasons
@@ -161,13 +163,13 @@ def draw_face(args=None):
 
     while rclpy.ok():
         if fullscreen:
-            cv2.setWindowProperty('Face_Display', cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+            cv2.setWindowProperty("Face_Display", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
         else:
-            cv2.setWindowProperty('Face_Display', cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_NORMAL)
+            cv2.setWindowProperty("Face_Display", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_NORMAL)
         writer.set_image()
         cv2.imshow("Face_Display", writer.image)
         key = cv2.waitKey(1)
-        if (key & 0xFF) == ord('q') or (key & 0xFF) == ord('f'):
+        if (key & 0xFF) == ord("q") or (key & 0xFF) == ord("f"):
             fullscreen = not fullscreen
         elif key == 27:
             break
