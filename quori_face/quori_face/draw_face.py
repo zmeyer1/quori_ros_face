@@ -7,12 +7,22 @@
 import rclpy
 from rclpy.node import Node
 from rclpy.executors import SingleThreadedExecutor
-from quori_face_msgs.msg import Eye, Face, Mouth
-from quori_face_msgs.srv import FaceQuery
-from tf2_ros import TransformBroadcaster
+from quori_face_msgs.msg import Eye, Face
+from quori_face_msgs.srv import FaceQuery, ScreenSize
+from tf2_ros import StaticTransformBroadcaster
+from geometry_msgs.msg import TransformStamped
+from enum import Enum
 
 import cv2, time
 import numpy as np
+
+class DefaultColors(Enum):
+    TEAL = (255, 60, 0) # BGR format
+    BLACK = (0, 0, 0)
+    RED = (0, 0, 255)
+    MAJENTA = (255, 0, 230)
+    YELLOW = (0, 255, 255)
+
 
 class FaceWriter(Node):
     def __init__(self, screen_size):
@@ -21,12 +31,15 @@ class FaceWriter(Node):
         self.timer = self.create_timer(0.05, self.blink_manager) # update image at 20 Hz
         self.create_subscription(Face, "quori_face/face_cmd", self.update_face, 10)
         self.create_service(FaceQuery, "quori_face/query_face", self.get_face)
+        self.create_service(ScreenSize, "quori_face/get_screensize", self.get_screensize)
 
-        self.create_publisher("/tf", TFMessage)
+        self.tf_broadcaster = StaticTransformBroadcaster(self)
 
         self.declare_parameter("max_blink_period", 10.0)
         self.declare_parameter("PPI", 100.0) # Roughly an average pixels per inch default for Quori's screen
     
+        # coordinates are fractions of the screen size: [0,0] is the top left, [1,1] is the bottom right
+        # sizes are in pixels, angles in degrees
         self.face_pose = {
             "left_eye": {
                 "center": [0.23, 0.4],
@@ -34,7 +47,7 @@ class FaceWriter(Node):
                 "radius": 70,
                 "thickness": 8,
                 "pupil_size": 25,
-                "eyelid": [0.23, 0.3],
+                "eyelid": [0.23, 0.1],
                 "eyelid_angle": -10,
                 "eyelid_size": [160,75],
             },
@@ -44,15 +57,15 @@ class FaceWriter(Node):
                 "radius": 70,
                 "thickness": 8,
                 "pupil_size": 25,
-                "eyelid": [0.77, 0.3],
+                "eyelid": [0.77, 0.1],
                 "eyelid_angle": 10,
                 "eyelid_size": [160,75],
             },
             "mouth": {
                 "left_corner": [0.25, 0.62],
                 "right_corner": [0.75, 0.62],
-                "upper_lip": [0.50, 0.57],
-                "lower_lip": [0.50, 0.60]
+                "upper_lip": [0.50, 0.64],
+                "lower_lip": [0.50, 0.68]
             },
         }
         self.screen_size = screen_size
@@ -61,8 +74,10 @@ class FaceWriter(Node):
         self.blink_direction = 1
         self.last_blink = time.time()
         self.blink_pause = 0
+        self.update_face_tf()
 
     def get_face(self, request, response):
+
         for idx in ["left_eye", "right_eye"]:
             eye = Eye()
             for k,v in self.face_pose[idx].items():
@@ -72,9 +87,14 @@ class FaceWriter(Node):
             setattr(response.face.mouth, k, v)
         return response
 
+    def get_screensize(self, request, response):
+        response.screensize = self.screen_size
+        return response
+
     def update_face(self, msg):
         self._update_prop(self.face_pose["left_eye"], msg.eyes[0])
         self._update_prop(self.face_pose["right_eye"], msg.eyes[1])
+        self.update_face_tf()
         self._update_prop(self.face_pose["mouth"], msg.mouth)
 
     def _update_prop(self, eye_dict, eye):
@@ -91,11 +111,35 @@ class FaceWriter(Node):
         """converts indices to point ratios of the screen size"""
         return (point[0]/self.screen_size[1], point[1]/self.screen_size[0])
 
+    def update_face_tf(self):
+        """Broadcasts the face pose as a TF2 transform."""
 
-    def draw_eye(self, im, eye_dict, color = (0,0,255)):
+        ppi = self.get_parameter("PPI").get_parameter_value().double_value
+
+        t_left, t_right = TransformStamped(), TransformStamped()
+        for t, eye in zip([t_left, t_right], ["left_eye", "right_eye"]):
+            # Convert radius from pixels to meters
+            eye_radius = self.face_pose[eye]["radius"] / ppi / 0.0254 #unused for now but will be used for orientation
+            t.header.stamp = self.get_clock().now().to_msg()
+            t.header.frame_id = "quori/head" # the base of quori's skull
+            t.child_frame_id = f"quori/head_{eye}"
+            t.transform.translation.x = 0.1 # head is 200 mm diameter
+            t.transform.translation.y = (self.face_pose[eye]["center"][0] - 0.5)*self.screen_size[0] / ppi * 0.00254
+            t.transform.translation.z = 0.1 # head is 200 mm diameter 
+
+            t.transform.rotation.x = 0.0
+            t.transform.rotation.y = 0.0
+            t.transform.rotation.z = 0.0
+            t.transform.rotation.w = 1.0
+
+            self.tf_broadcaster.sendTransform(t)
+
+
+    def draw_eye(self, im, eye_dict, color = (255,60,0)):
         """Color is in BGR, not RGB."""
         eye_center = self._ratio2pt(eye_dict["center"])
         eye_vector = self._ratio2pt(eye_dict["pupil"])
+        pupil_center = self._ratio2pt(eye_dict["pupil"])
 
         if np.linalg.norm(eye_vector) > (eye_dict["radius"] - eye_dict["pupil_size"]- eye_dict["thickness"]):
             # handle pupils out of spec
@@ -108,7 +152,7 @@ class FaceWriter(Node):
         cv2.ellipse(im, self._ratio2pt(lid_pos), eye_dict["eyelid_size"], eye_dict["eyelid_angle"], 0, 360, (0,0,0), -1)
         
 
-    def draw_mouth(self, im, mouth_dict, color = (0,0,255)):
+    def draw_mouth(self, im, mouth_dict, color = (255,60,0)):
         """Color is in BGR, not RGB."""
         upper_x, upper_y = zip(*[self._ratio2pt(mouth_dict[key]) for key in ["left_corner", "upper_lip", "right_corner"]])
         lower_x, lower_y = zip(*[self._ratio2pt(mouth_dict[key]) for key in ["left_corner", "lower_lip", "right_corner"]])
@@ -122,12 +166,12 @@ class FaceWriter(Node):
 
         im[np.logical_and(upper_mask, lower_mask)] = color
 
-    def set_image(self):
+    def set_image(self, color=(255, 60, 0)):
         # create img
         im = np.zeros(self.screen_size)
-        self.draw_eye(im, self.face_pose["left_eye"])
-        self.draw_eye(im, self.face_pose["right_eye"])
-        self.draw_mouth(im, self.face_pose["mouth"])
+        self.draw_eye(im, self.face_pose["left_eye"], color=color)
+        self.draw_eye(im, self.face_pose["right_eye"], color=color)
+        self.draw_mouth(im, self.face_pose["mouth"], color=color)
         self.image = im
 
     def blink_manager(self):
@@ -166,7 +210,7 @@ def draw_face(args=None):
             cv2.setWindowProperty("Face_Display", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
         else:
             cv2.setWindowProperty("Face_Display", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_NORMAL)
-        writer.set_image()
+        writer.set_image(color = DefaultColors.TEAL.value)
         cv2.imshow("Face_Display", writer.image)
         key = cv2.waitKey(1)
         if (key & 0xFF) == ord("q") or (key & 0xFF) == ord("f"):

@@ -30,8 +30,10 @@ setup(
     entry_points={
         'console_scripts': [
             'draw_face = quori_face.draw_face:draw_face',
-            'calibrate_face = quori_face.calibrate_face:main',
+            'spin_eyes = quori_face.spin_eyes:main',
             'focal_point = quori_face.focal_point:main',
+            'gaze_controller = quori_face.gaze_controller:main',
+            'watch_color = quori_face.watch_color:main',
         ],
     },
 )

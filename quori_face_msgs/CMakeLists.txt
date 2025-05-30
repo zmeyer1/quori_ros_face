@@ -30,6 +30,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/Mouth.msg"
   "msg/Face.msg"
   "srv/FaceQuery.srv"
+  "srv/ScreenSize.srv"
 )
 
 ament_package()
