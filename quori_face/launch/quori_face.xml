@@ -1,0 +1,12 @@
+<launch>
+
+  <node pkg="quori_face" exec="draw_face" name="draw_face_node">
+    <param name="max_blink_period" value="12.0"/>
+    <param name="PPI" value="100.0"/>
+  </node>
+
+  <node pkg="quori_face" exec="gaze_controller" name="gaze_controller_node">
+    <param name="PPI" value="100.0"/>
+  </node>
+
+</launch>

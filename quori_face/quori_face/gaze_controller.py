@@ -27,7 +27,6 @@ class GazeController(Node):
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
 
-        self.declare_parameter("max_blink_period", 10.0)
         self.declare_parameter("PPI", 100.0) # Roughly an average pixels per inch default for Quori's screen
         self.face_query = self.create_client(FaceQuery, 'quori_face/query_face')
         self.screen_query = self.create_client(ScreenSize, 'quori_face/get_screensize')

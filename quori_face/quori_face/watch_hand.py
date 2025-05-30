@@ -29,15 +29,15 @@ class HandWatcher(Node):
 
         color_img_sub = message_filters.Subscriber(self, Image, '/astra_ros/devices/default/color/image_color')
         color_info_sub = message_filters.Subscriber(self, CameraInfo, '/astra_ros/devices/default/color/camera_info')
-        point_cld_sub = message_filters.Subscriber(self, PointCloud, '/astra_ros/devices/default/point_cloud')
-        self.ts = message_filters.ApproximateTimeSynchronizer([color_img_sub, color_info_sub, point_cld_sub], queue_size=10, slop=0.5)
+        depth_sub = message_filters.Subscriber(self, Image, '/astra_ros/devices/default/depth/image')
+        self.ts = message_filters.ApproximateTimeSynchronizer([color_img_sub, color_info_sub, depth_sub], queue_size=10, slop=0.5)
         self.ts.registerCallback(self.image_callback)
 
         self.bridge = CvBridge()
 
         self.hands = mp_hands.Hands(static_image_mode=False, max_num_hands=1, min_detection_confidence=0.7, min_tracking_confidence=0.5)
 
-    def image_callback(self, color_msg, info_msg, pt_cloud_msg):
+    def image_callback(self, color_msg, info_msg, depth_msg):
         
         try:
             image = self.bridge.imgmsg_to_cv2(color_msg, desired_encoding='bgr8')
@@ -57,28 +57,31 @@ class HandWatcher(Node):
                 center_x = int(wrist.x * image.shape[1])
                 center_y = int(wrist.y * image.shape[0])
 
-                fx = info_msg.k[0]
+                depth_image = self.bridge.imgmsg_to_cv2(depth_msg, desired_encoding='passthrough')
+
+                depth_value = depth_image[center_y, center_x]
+                if depth_value == 0:
+                    self.get_logger().warn("Depth value at wrist is zero, skipping hand detection.")
+                    return                
+
+                fx = info_msg.k[0] # focal lengths
                 fy = info_msg.k[4]
-                cx = info_msg.k[2]
+                cx = info_msg.k[2] # principal pts
                 cy = info_msg.k[5]
 
-                # Convert pixel coordinates to camera coordinates
                 x_per_z= (center_x - cx) / fx
                 y_per_z = (center_y - cy) / fy
+                z = depth_value / 1000.0  # Convert from mm to meters
 
-                for pt in pt_cloud_msg.points:
-                    if pt.z*x_per_z - pt.x < 0.01 and pt.z*y_per_z - pt.y < 0.01:
-                        out_pt = PointStamped()
-                        out_pt.point.x = pt.x
-                        out_pt.point.y = pt.y
-                        out_pt.point.z = pt.z
-                        out_pt.header.frame_id = "quori/head_camera_optical"
-                        out_pt.header.stamp = self.get_clock().now().to_msg()
+                out_pt = PointStamped()
+                out_pt.point.x = x_per_z * z
+                out_pt.point.y = y_per_z * z
+                out_pt.point.z = z
+                out_pt.header.frame_id = "quori/head_camera_optical"
+                out_pt.header.stamp = self.get_clock().now().to_msg()
 
-                        self.get_logger().info(f"Detected hand at ({pt.x}, {pt.y}, {pt.z})")
-                        self.pub.publish(out_pt)
-                        # only find a single hand
-                        break
+                self.get_logger().info(f"Detected hand at ({out_pt.point.x}, {out_pt.point.y}, {out_pt.point.z})")
+                self.pub.publish(out_pt)
                 self.image_pub.publish(self.bridge.cv2_to_imgmsg(image, encoding='bgr8'))
         
 
