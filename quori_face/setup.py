@@ -33,7 +33,7 @@ setup(
             'spin_eyes = quori_face.spin_eyes:main',
             'focal_point = quori_face.focal_point:main',
             'gaze_controller = quori_face.gaze_controller:main',
-            'watch_color = quori_face.watch_color:main',
+            'watch_hand = quori_face.watch_hand:main',
         ],
     },
 )

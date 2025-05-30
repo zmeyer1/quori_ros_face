@@ -1,16 +1,17 @@
 # !/usr/bin/env python3
 # 
-# watch_color.py
+# watch_hand.py
 # 
 # Zane Meyer
 
 import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import PointStamped
-from sensor_msgs.msg import Image
+from sensor_msgs.msg import Image, PointCloud
 import cv2
 from cv_bridge import CvBridge
 import message_filters
+import numpy as np
 
 import mediapipe as mp
 
@@ -18,26 +19,26 @@ import mediapipe as mp
 mp_hands = mp.solutions.hands
 mp_drawing = mp.solutions.drawing_utils
 
-class ColorWatcher(Node):
+class HandWatcher(Node):
 
     def __init__(self):
-        super().__init__('color_watcher')
+        super().__init__('hand_watcher')
 
         self.pub = self.create_publisher(PointStamped, 'quori_face/focal_point', 10)
         self.image_pub = self.create_publisher(Image, 'hand_detection', 10)
 
         color_img_sub = message_filters.Subscriber(self, Image, '/astra_ros/devices/default/color/image_color')
-        depth_img_sub = message_filters.Subscriber(self, Image, '/astra_ros/devices/default/depth/image')
-        self.ts = message_filters.ApproximateTimeSynchronizer([color_img_sub, depth_img_sub], queue_size=10, slop=0.1)
+        point_cld_sub = message_filters.Subscriber(self, PointCloud, '/astra_ros/devices/default/point_cloud')
+        self.ts = message_filters.ApproximateTimeSynchronizer([color_img_sub, point_cld_sub], queue_size=10, slop=2**30)
         self.ts.registerCallback(self.image_callback)
 
         self.bridge = CvBridge()
-        # self.declare_parameter('target_color', [0, 255, 0])
-        # self.declare_parameter('color_tolerance', 30)
 
-        self.hands = mp_hands.Hands(static_image_mode=True, max_num_hands=1, min_detection_confidence=0.7, min_tracking_confidence=0.5)
+        self.hands = mp_hands.Hands(static_image_mode=False, max_num_hands=1, min_detection_confidence=0.7, min_tracking_confidence=0.5)
 
-    def image_callback(self, color_msg, depth_msg):
+    def image_callback(self, color_msg, pt_cloud_msg):
+        
+        self.get_logger().error(f"Stepping into callback")
         try:
             image = self.bridge.imgmsg_to_cv2(color_msg, desired_encoding='bgr8')
             im_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
@@ -51,35 +52,30 @@ class ColorWatcher(Node):
             for hand_landmarks in results.multi_hand_landmarks:
                 mp_drawing.draw_landmarks(image, hand_landmarks, mp_hands.HAND_CONNECTIONS)
 
-                # Get the wrist position
+                # Get the wrist position as center pos
                 wrist = hand_landmarks.landmark[mp_hands.HandLandmark.WRIST]
                 center_x = int(wrist.x * image.shape[1])
                 center_y = int(wrist.y * image.shape[0])
 
-                try:
-                    depth = self.bridge.imgmsg_to_cv2(depth_msg, desired_encoding='passthrough')
-                    depth_value = depth[center_y, center_x]
-                except Exception as e:
-                    self.get_logger().error(f"Failed to convert depth image: {e}")
-                    return
+                # point cloud stuff
+                loc = pt_cloud_msg.points[center_x * image.shape[1] + center_y]
 
                 pt = PointStamped()
                 pt.header.frame_id = "quori/head_camera_optical"
                 pt.header.stamp = self.get_clock().now().to_msg()
-                pt.point.x = float(center_x)
-                pt.point.y = float(center_y)
-                pt.point.z = float(depth_value)
+                pt.point.x = float(loc.x)
+                pt.point.y = float(loc.y)
+                pt.point.z = float(loc.z)
 
-                self.get_logger().info(f"Detected hand at ({center_x}, {center_y}, {depth_value})")
+                self.get_logger().info(f"Detected hand at ({loc.x}, {loc.y}, {loc.z})")
 
                 self.pub.publish(pt)
                 self.image_pub.publish(self.bridge.cv2_to_imgmsg(image, encoding='bgr8'))
         
 
-
 def main(args=None):
     rclpy.init(args=args)
-    node = ColorWatcher()
+    node = HandWatcher()
     rclpy.spin(node)
     rclpy.shutdown()
 
