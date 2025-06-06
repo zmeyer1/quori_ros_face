@@ -23,6 +23,8 @@ class DefaultColors(Enum):
     MAJENTA = (255, 0, 230)
     YELLOW = (0, 255, 255)
 
+HEAD_DIAMETER = 0.2
+MPERINCH = 0.0254
 
 class FaceWriter(Node):
     def __init__(self, screen_size):
@@ -119,13 +121,12 @@ class FaceWriter(Node):
         t_left, t_right = TransformStamped(), TransformStamped()
         for t, eye in zip([t_left, t_right], ["left_eye", "right_eye"]):
             # Convert radius from pixels to meters
-            eye_radius = self.face_pose[eye]["radius"] / ppi / 0.0254 #unused for now but will be used for orientation
             t.header.stamp = self.get_clock().now().to_msg()
             t.header.frame_id = "quori/head" # the base of quori's skull
             t.child_frame_id = f"quori/head_{eye}"
-            t.transform.translation.x = 0.1 # head is 200 mm diameter
-            t.transform.translation.y = (self.face_pose[eye]["center"][0] - 0.5)*self.screen_size[0] / ppi * 0.00254
-            t.transform.translation.z = 0.1 # head is 200 mm diameter 
+            t.transform.translation.x = HEAD_DIAMETER / 2
+            t.transform.translation.y = (self.face_pose[eye]["center"][0] - 0.5)*self.screen_size[0] / ppi * MPERINCH
+            t.transform.translation.z = HEAD_DIAMETER / 2
 
             t.transform.rotation.x = 0.0
             t.transform.rotation.y = 0.0
@@ -194,10 +195,15 @@ def draw_face(args=None):
     rclpy.init(args=args)
 
     cv2.namedWindow("Face_Display", cv2.WND_PROP_FULLSCREEN)
+    _, _, old_x, old_y = cv2.getWindowImageRect("Face_Display")
     cv2.setWindowProperty("Face_Display", cv2.WND_PROP_ASPECT_RATIO, cv2.WINDOW_FREERATIO)
     cv2.setWindowProperty("Face_Display", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
-    cv2.waitKey(150) # sleep while letting cv2 set up
-    _, _, x, y = cv2.getWindowImageRect("Face_Display")
+    while True:
+        _, _, x, y = cv2.getWindowImageRect("Face_Display")
+        if x != old_x and y != old_y:
+            break
+        cv2.imshow("Face_Display", np.zeros((3,3)))
+        cv2.waitKey(20)
     size = (y//2,x//2,3) # manually limit image size for performance reasons
     fullscreen = True
 

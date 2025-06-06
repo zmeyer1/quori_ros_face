@@ -13,6 +13,7 @@ from tf2_ros import TransformListener, Buffer
 from geometry_msgs.msg import PointStamped
 from tf2_geometry_msgs.tf2_geometry_msgs import do_transform_point
 
+MPERINCH = 0.0254
 
 class GazeController(Node):
     def __init__(self):
@@ -69,7 +70,7 @@ class GazeController(Node):
 
         for i,eye in enumerate(["left_eye", "right_eye"]):
             eye_size = self.face_pose.eyes[i].radius
-            eye_size = eye_size / self.get_parameter("PPI").value * 0.0254  # Convert from pixels to meters
+            eye_size = eye_size / self.get_parameter("PPI").value * MPERINCH # Convert from pixels to meters
             transform = self.tf_buffer.lookup_transform(f"quori/head_{eye}",msg.header.frame_id, rclpy.time.Time())
             target_pt = do_transform_point(msg, transform)
 
@@ -80,8 +81,8 @@ class GazeController(Node):
             z_face = (target_pt.point.z) * t
 
             # now convert the point back to a fraction of the screen size y->x, z->y
-            x_coord = y_face * self.get_parameter("PPI").value / 0.0254
-            y_coord = -z_face * self.get_parameter("PPI").value / 0.0254  # negative because the screen is flipped in the y direction
+            x_coord = y_face * self.get_parameter("PPI").value /MPERINCH
+            y_coord = -z_face * self.get_parameter("PPI").value / MPERINCH  # negative because the screen is flipped in the y direction
             x_coord /= self.screen_size[0]
             y_coord /= self.screen_size[1]
             # Publish the eye position

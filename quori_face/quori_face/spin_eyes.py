@@ -23,7 +23,8 @@ class EyeSpinner(Node):
         face = Face()
         for eye in range(2):
             msg = Eye()
-            msg.pupil = [0.05*np.cos(0.5*2*np.pi * (time.time() - self.start)), 0.05*np.sin(0.5*2*np.pi * (time.time() - self.start))]
+            # Spin eyes around the circle in different directions
+            msg.pupil = [0.05*np.cos(0.5*2*np.pi * (time.time() - self.start)), 0.05*np.sin((-1)**(eye)*0.5*2*np.pi * (time.time() - self.start))]
             face.eyes.append(msg)
 
         self.pub.publish(face)
